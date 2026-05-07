@@ -36,6 +36,8 @@ import {
 import { readCostData, readHistory, writeStorage } from './utils/storage';
 import { validateCostData } from './utils/validation';
 
+const PRINT_PREPARE_DELAY_MS = 200;
+
 const App = () => {
   const [data, setData] = useState<CostData>(() => readCostData(SESSION_STORAGE_KEY).value);
   const [savedItems, setSavedItems] = useState<CostData[]>(() => readHistory(HISTORY_STORAGE_KEY).value);
@@ -171,7 +173,7 @@ const App = () => {
       } finally {
         setIsPrinting(false);
       }
-    }, 200);
+    }, PRINT_PREPARE_DELAY_MS);
   };
 
   const resetForm = () => {
