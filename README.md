@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# Cost Manager
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Cost Manager is a React + TypeScript web app for calculating product cost and selling price per packet size.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Raw material costing with wastage-aware effective cost
+- Complete processing cost inputs (grinding, steaming, drying, labour, electricity, other)
+- Common costs and profit margin controls
+- Full packet management (add, edit, remove packet size and packet cost)
+- Save/load cost sessions in history (rename, delete, clear all)
+- Validation and user-friendly error feedback
+- Print-friendly cost report
+- Local storage persistence with fallback error handling
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Prerequisites
 
-## Expanding the ESLint configuration
+- Node.js 20+
+- npm 10+
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Install
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Run locally
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+## Quality Checks
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+## Project Structure
+
+- `src/components` reusable UI components
+- `src/utils` calculations, storage, and validation helpers
+- `src/constants.ts` app constants/defaults
+- `src/types.ts` shared TypeScript models
+
+## Deployment
+
+Recommended hosting: **Vercel**.
+
+1. Connect this repository to Vercel
+2. Build command: `npm run build`
+3. Output directory: `dist`
+4. Deploy
+
+## Release Checklist
+
+- [ ] Run lint/test/build
+- [ ] Smoke test packet editing, history, and print
+- [ ] Confirm local storage restore behavior
+- [ ] Publish to hosting target

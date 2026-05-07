@@ -1,254 +1,441 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Package, 
-  Coins, 
-  Cpu, 
-  Calculator, 
-  Printer, 
-  Plus, 
-  TrendingUp,
-  Zap,
-  Users,
-  Layers,
-  Save,
-  Trash2,
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Calculator,
+  Coins,
+  Cpu,
   History,
-  Percent
+  Package,
+  Percent,
+  Printer,
+  Save,
+  TrendingUp,
+  Users,
+  Zap,
 } from 'lucide-react';
+import {
+  CURRENCY,
+  HISTORY_STORAGE_KEY,
+  PRECISION_OPTS,
+  SESSION_STORAGE_KEY,
+  createDefaultCostData,
+  createId,
+} from './constants';
+import { HistoryPanel } from './components/HistoryPanel';
+import { InputField } from './components/InputField';
+import { PacketManager } from './components/PacketManager';
+import { SectionCard } from './components/SectionCard';
+import type { CostData } from './types';
+import {
+  getCalculatedPackets,
+  getEffectiveRawCost,
+  getProcessingSubtotal,
+  getSellingPrice1kg,
+  getTotalCost1kg,
+  toNumber,
+} from './utils/calculations';
+import { readCostData, readHistory, writeStorage } from './utils/storage';
+import { validateCostData } from './utils/validation';
 
-// --- Interfaces ---
-interface PacketDefinition {
-  id: string;
-  label: string;
-  multiplier: number;
-  emptyPacketPrice: number;
-}
-
-interface RawMaterial {
-  originalPricePerKg: number;
-  revisedPricePerKg: number;
-  wastage: number;
-}
-
-interface ProcessingCosts {
-  grinding: number;
-  steaming: number;
-  drying: number;
-  labour: number;
-  electricity: number;
-  other: number;
-}
-
-interface CommonCosts {
-  stickerPrice: number;
-}
-
-interface CostData {
-  id: string;
-  date: string;
-  productName: string;
-  rawMaterial: RawMaterial;
-  processing: ProcessingCosts;
-  common: CommonCosts;
-  packetDefinitions: PacketDefinition[]; 
-  profitMargin: number;
-}
-
-interface CalculatedPacket {
-  id: string;
-  label: string;
-  costPrice: number;
-  sellingPrice: number;
-  multiplier: number;
-  emptyPacketPrice: number;
-}
-
-const CURRENCY = "LKR";
-const PRECISION_OPTS = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-
-const DEFAULT_PACKETS: PacketDefinition[] = [
-  { id: 'p1', label: '50g', multiplier: 0.05, emptyPacketPrice: 0 },
-  { id: 'p2', label: '100g', multiplier: 0.1, emptyPacketPrice: 0 },
-  { id: 'p3', label: '250g', multiplier: 0.25, emptyPacketPrice: 0 },
-  { id: 'p4', label: '500g', multiplier: 0.5, emptyPacketPrice: 0 },
-  { id: 'p5', label: '1kg', multiplier: 1.0, emptyPacketPrice: 0 },
-];
-
-const InputField = ({ label, value, onChange, type = "number", icon: Icon, placeholder = "0.00", step = "0.0001" }: any) => (
-  <div className="mb-4 text-left">
-    <label className="block text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
-      {Icon && <Icon size={16} className="text-blue-500" />}
-      {label}
-    </label>
-    <input
-      type={type}
-      step={step}
-      value={value} 
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-800 font-medium"
-    />
-  </div>
-);
-
-const SectionCard = ({ title, icon: Icon, children, subtotal }: any) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-    <div className="flex items-center justify-between mb-4 text-left">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Icon size={20} /></div>
-        <h2 className="text-lg font-bold text-gray-800">{title}</h2>
-      </div>
-      {subtotal !== undefined && (
-        <span className="text-xs font-bold px-2 py-1 bg-green-50 text-green-700 rounded-full">
-          Sub: {CURRENCY} {subtotal.toLocaleString(undefined, PRECISION_OPTS)}
-        </span>
-      )}
-    </div>
-    {children}
-  </div>
-);
-
-const App: React.FC = () => {
-  const [data, setData] = useState<CostData>(() => {
-    const saved = localStorage.getItem('costpro_v5_session');
-    return saved ? JSON.parse(saved) : {
-      id: crypto.randomUUID(),
-      date: new Date().toISOString().split('T')[0],
-      productName: '',
-      rawMaterial: { originalPricePerKg: 0, revisedPricePerKg: 0, wastage: 0 },
-      processing: { grinding: 0, steaming: 0, drying: 0, labour: 0, electricity: 0, other: 0 },
-      common: { stickerPrice: 0 },
-      packetDefinitions: DEFAULT_PACKETS,
-      profitMargin: 0
-    };
-  });
-
-  const [savedItems, setSavedItems] = useState<CostData[]>(() => {
-    const saved = localStorage.getItem('costpro_v5_history');
-    return saved ? JSON.parse(saved) : [];
-  });
-
+const App = () => {
+  const [data, setData] = useState<CostData>(() => readCostData(SESSION_STORAGE_KEY).value);
+  const [savedItems, setSavedItems] = useState<CostData[]>(() => readHistory(HISTORY_STORAGE_KEY).value);
   const [isPrinting, setIsPrinting] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [storageError, setStorageError] = useState<string | null>(() => {
+    const sessionError = readCostData(SESSION_STORAGE_KEY).error;
+    const historyError = readHistory(HISTORY_STORAGE_KEY).error;
+    return sessionError ?? historyError;
+  });
 
-  useEffect(() => { localStorage.setItem('costpro_v5_session', JSON.stringify(data)); }, [data]);
-  useEffect(() => { localStorage.setItem('costpro_v5_history', JSON.stringify(savedItems)); }, [savedItems]);
+  useEffect(() => {
+    const writeError = writeStorage(SESSION_STORAGE_KEY, data);
+    if (writeError) {
+      setStorageError(writeError);
+    }
+  }, [data]);
 
-  const effectiveRawCost = useMemo(() => {
-    const price = Number(data.rawMaterial.revisedPricePerKg) || 0;
-    const wastage = (Number(data.rawMaterial.wastage) || 0) / 100;
-    return wastage >= 1 ? price : price / (1 - wastage);
-  }, [data.rawMaterial.revisedPricePerKg, data.rawMaterial.wastage]);
+  useEffect(() => {
+    const writeError = writeStorage(HISTORY_STORAGE_KEY, savedItems);
+    if (writeError) {
+      setStorageError(writeError);
+    }
+  }, [savedItems]);
 
-  const processingSubtotal = useMemo(() => Object.values(data.processing).reduce((a, b) => Number(a) + Number(b), 0), [data.processing]);
-  const totalCost1kg = useMemo(() => effectiveRawCost + processingSubtotal + (Number(data.common.stickerPrice) || 0), [effectiveRawCost, processingSubtotal, data.common.stickerPrice]);
-  const sellingPrice1kg = useMemo(() => totalCost1kg * (1 + (Number(data.profitMargin) || 0) / 100), [totalCost1kg, data.profitMargin]);
+  const effectiveRawCost = useMemo(() => getEffectiveRawCost(data), [data]);
+  const processingSubtotal = useMemo(() => getProcessingSubtotal(data), [data]);
+  const totalCost1kg = useMemo(() => getTotalCost1kg(data), [data]);
+  const sellingPrice1kg = useMemo(() => getSellingPrice1kg(data), [data]);
+  const calculatedPackets = useMemo(() => getCalculatedPackets(data), [data]);
 
-  const calculatedPackets: CalculatedPacket[] = useMemo(() => {
-    return data.packetDefinitions.map(p => ({
-      id: p.id,
-      label: p.label,
-      costPrice: (totalCost1kg * p.multiplier) + Number(p.emptyPacketPrice),
-      sellingPrice: (sellingPrice1kg * p.multiplier) + Number(p.emptyPacketPrice),
-      multiplier: p.multiplier,
-      emptyPacketPrice: p.emptyPacketPrice
+  const updateData = <K extends keyof CostData>(section: K, value: CostData[K]) => {
+    setData((prev) => ({ ...prev, [section]: value }));
+  };
+
+  const updateRawMaterial = (field: keyof CostData['rawMaterial'], value: string) => {
+    setData((prev) => ({ ...prev, rawMaterial: { ...prev.rawMaterial, [field]: value } }));
+  };
+
+  const updateProcessing = (field: keyof CostData['processing'], value: string) => {
+    setData((prev) => ({ ...prev, processing: { ...prev.processing, [field]: value } }));
+  };
+
+  const updateCommon = (field: keyof CostData['common'], value: string) => {
+    setData((prev) => ({ ...prev, common: { ...prev.common, [field]: value } }));
+  };
+
+  const handlePacketChange = (id: string, field: 'label' | 'weightKg' | 'emptyPacketPrice', value: string) => {
+    setData((prev) => ({
+      ...prev,
+      packetDefinitions: prev.packetDefinitions.map((packet) =>
+        packet.id === id ? { ...packet, [field]: value } : packet,
+      ),
     }));
-  }, [totalCost1kg, sellingPrice1kg, data.packetDefinitions]);
+  };
 
-  const handleInputChange = (section: keyof CostData, field: string, value: any) => {
-    setData(prev => ({ ...prev, [section]: typeof prev[section] === 'object' ? { ...prev[section] as any, [field]: value } : value }));
+  const handlePacketAdd = () => {
+    setData((prev) => ({
+      ...prev,
+      packetDefinitions: [
+        ...prev.packetDefinitions,
+        {
+          id: createId(),
+          label: '',
+          weightKg: '0',
+          emptyPacketPrice: '0',
+        },
+      ],
+    }));
+  };
+
+  const handlePacketRemove = (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      packetDefinitions: prev.packetDefinitions.filter((packet) => packet.id !== id),
+    }));
   };
 
   const saveToHistory = () => {
-    if (!data.productName) return alert("Please enter a product name.");
-    setSavedItems([{ ...data, id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0] }, ...savedItems]);
-    alert("Saved!");
+    const validation = validateCostData(data);
+    setErrors(validation.errors);
+
+    if (validation.errors.length > 0) {
+      return;
+    }
+
+    const saveItem = {
+      ...data,
+      id: createId(),
+      date: new Date().toISOString().split('T')[0],
+      productName: data.productName.trim(),
+    };
+
+    setSavedItems((prev) => [saveItem, ...prev]);
+    setErrors([]);
   };
 
-  const loadHistoryItem = (item: CostData) => {
-    setData(item);
-    setShowHistory(false);
+  const handleDeleteHistory = (id: string) => {
+    if (!window.confirm('Delete this history item?')) {
+      return;
+    }
+
+    setSavedItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleClearHistory = () => {
+    if (!window.confirm('Clear all history items?')) {
+      return;
+    }
+
+    setSavedItems([]);
+  };
+
+  const handleRenameHistory = (id: string, productName: string) => {
+    const trimmed = productName.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setSavedItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, productName: trimmed } : item)),
+    );
   };
 
   const handlePrint = () => {
     setIsPrinting(true);
-    setTimeout(() => { window.print(); setIsPrinting(false); }, 500);
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch {
+        setStorageError('Printing failed on this browser.');
+      } finally {
+        setIsPrinting(false);
+      }
+    }, 200);
+  };
+
+  const resetForm = () => {
+    const next = createDefaultCostData();
+    updateData('id', next.id);
+    updateData('date', next.date);
+    updateData('productName', next.productName);
+    updateData('rawMaterial', next.rawMaterial);
+    updateData('processing', next.processing);
+    updateData('common', next.common);
+    updateData('packetDefinitions', next.packetDefinitions);
+    updateData('profitMargin', next.profitMargin);
+    setErrors([]);
   };
 
   if (isPrinting) {
     return (
-      <div className="p-10 bg-white min-h-screen text-gray-900 text-left">
-        <h1 className="text-4xl font-black uppercase mb-2 border-b-8 border-gray-900 pb-4">Cost Report: {data.productName}</h1>
-        <table className="w-full mb-10 border-collapse">
-          <thead><tr className="bg-gray-900 text-white text-left"><th className="p-3">Category</th><th className="p-3 text-right">LKR</th></tr></thead>
+      <div className="min-h-screen bg-white p-10 text-left text-gray-900">
+        <h1 className="mb-2 border-b-8 border-gray-900 pb-4 text-4xl font-black uppercase">
+          Cost Report: {data.productName || 'Unnamed'}
+        </h1>
+        <table className="mb-10 w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-900 text-left text-white">
+              <th className="p-3">Category</th>
+              <th className="p-3 text-right">{CURRENCY}</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr className="border-b"><td className="p-3">Raw Material</td><td className="p-3 text-right">{effectiveRawCost.toFixed(2)}</td></tr>
-            <tr className="border-b"><td className="p-3">Processing</td><td className="p-3 text-right">{processingSubtotal.toFixed(2)}</td></tr>
-            <tr className="bg-blue-50 font-black"><td className="p-3">Total (1kg)</td><td className="p-3 text-right">{totalCost1kg.toFixed(2)}</td></tr>
+            <tr className="border-b">
+              <td className="p-3">Raw Material</td>
+              <td className="p-3 text-right">{effectiveRawCost.toFixed(2)}</td>
+            </tr>
+            <tr className="border-b">
+              <td className="p-3">Processing</td>
+              <td className="p-3 text-right">{processingSubtotal.toFixed(2)}</td>
+            </tr>
+            <tr className="bg-blue-50 font-black">
+              <td className="p-3">Total (1kg)</td>
+              <td className="p-3 text-right">{totalCost1kg.toFixed(2)}</td>
+            </tr>
           </tbody>
         </table>
-        <h2 className="text-lg font-black uppercase mb-4">Packet Pricing</h2>
-        {calculatedPackets.map(p => (
-          <div key={p.id} className="flex justify-between border-b py-2 font-bold"><span>{p.label}</span><span>{CURRENCY} {p.sellingPrice.toFixed(2)}</span></div>
+        <h2 className="mb-4 text-lg font-black uppercase">Packet Pricing</h2>
+        {calculatedPackets.map((packet) => (
+          <div key={packet.id} className="flex justify-between border-b py-2 font-bold">
+            <span>{packet.label}</span>
+            <span>
+              {CURRENCY} {packet.sellingPrice.toFixed(2)}
+            </span>
+          </div>
         ))}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 max-w-md mx-auto shadow-2xl overflow-x-hidden">
-      <header className="bg-white px-6 pt-8 pb-6 border-b sticky top-0 z-10 text-left">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-black flex items-center gap-2"><Calculator className="text-blue-600" /> CostPro V5</h1>
+    <div className="mx-auto min-h-screen max-w-4xl bg-slate-50 pb-24 text-slate-900 shadow-2xl">
+      <header className="sticky top-0 z-10 border-b bg-white px-6 pb-6 pt-8 text-left">
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="flex items-center gap-2 text-2xl font-black">
+            <Calculator className="text-blue-600" /> Cost Manager
+          </h1>
           <div className="flex gap-2">
-            <button onClick={() => setShowHistory(!showHistory)} className="p-3 bg-slate-100 rounded-2xl"><History size={20} /></button>
-            <button onClick={handlePrint} className="p-3 bg-blue-600 text-white rounded-2xl"><Printer size={20} /></button>
+            <button
+              type="button"
+              onClick={() => setShowHistory((prev) => !prev)}
+              className="rounded-2xl bg-slate-100 p-3"
+              aria-label="Toggle history"
+            >
+              <History size={20} />
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="rounded-2xl bg-blue-600 p-3 text-white"
+              aria-label="Print report"
+            >
+              <Printer size={20} />
+            </button>
           </div>
         </div>
-        {showHistory && (
-          <div className="mb-4 p-4 bg-slate-100 rounded-2xl">
-            {savedItems.map(item => (
-              <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-xl mb-2 shadow-sm">
-                <div className="cursor-pointer" onClick={() => loadHistoryItem(item)}>
-                  <p className="font-bold text-xs">{item.productName || 'Unnamed'}</p>
-                </div>
-                <button onClick={() => setSavedItems(savedItems.filter(i => i.id !== item.id))} className="text-red-400"><Trash2 size={14} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-        <InputField label="Product Name" value={data.productName} type="text" onChange={(val: any) => handleInputChange('productName', '', val)} icon={Package} />
+
+        {showHistory ? (
+          <HistoryPanel
+            items={savedItems}
+            onLoad={(item) => {
+              setData(item);
+              setShowHistory(false);
+            }}
+            onDelete={handleDeleteHistory}
+            onClear={handleClearHistory}
+            onRename={handleRenameHistory}
+          />
+        ) : null}
+
+        <InputField
+          label="Product Name"
+          value={data.productName}
+          type="text"
+          onChange={(value) => updateData('productName', value)}
+          icon={Package}
+          placeholder="Enter product name"
+        />
       </header>
-      <main className="px-5 mt-8">
-        <SectionCard title="Raw Material" icon={Coins}>
-          <InputField label="Price / kg" value={data.rawMaterial.revisedPricePerKg} onChange={(val: any) => handleInputChange('rawMaterial', 'revisedPricePerKg', val)} icon={TrendingUp} />
-          <InputField label="Wastage (%)" value={data.rawMaterial.wastage} onChange={(val: any) => handleInputChange('rawMaterial', 'wastage', val)} icon={Percent} />
-        </SectionCard>
-        <SectionCard title="Processing Costs" icon={Cpu} subtotal={processingSubtotal}>
-          <div className="grid grid-cols-2 gap-x-4">
-            <InputField label="Grinding" value={data.processing.grinding} onChange={(val: any) => handleInputChange('processing', 'grinding', val)} icon={Layers} />
-            <InputField label="Labour" value={data.processing.labour} onChange={(val: any) => handleInputChange('processing', 'labour', val)} icon={Users} />
-            <InputField label="Electricity" value={data.processing.electricity} onChange={(val: any) => handleInputChange('processing', 'electricity', val)} icon={Zap} />
-          </div>
-        </SectionCard>
-        <SectionCard title="Profit Margin" icon={Plus}>
-          <div className="mt-4 pt-4 text-left">
-            <span className="text-sm font-bold block mb-2">Margin: {data.profitMargin}%</span>
-            <input type="range" min="0" max="100" value={data.profitMargin} onChange={(e) => handleInputChange('profitMargin', '', Number(e.target.value))} className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600" />
-          </div>
-        </SectionCard>
-        <div className="bg-slate-900 rounded-[3rem] p-8 text-white text-left">
-          <h3 className="text-4xl font-black mb-6">{CURRENCY} {sellingPrice1kg.toLocaleString(undefined, PRECISION_OPTS)}</h3>
-          <div className="space-y-4">
-            {calculatedPackets.map((p) => (
-              <div key={p.id} className="bg-white/5 p-4 rounded-2xl flex justify-between items-center">
-                <span className="font-bold">{p.label}</span>
-                <span className="text-xl font-black text-green-400">{CURRENCY} {p.sellingPrice.toLocaleString(undefined, PRECISION_OPTS)}</span>
-              </div>
-            ))}
-          </div>
+
+      <main className="mt-8 grid gap-6 px-5 lg:grid-cols-2">
+        <div>
+          <SectionCard title="Raw Material" icon={Coins}>
+            <InputField
+              label="Original Price / kg"
+              value={data.rawMaterial.originalPricePerKg}
+              onChange={(value) => updateRawMaterial('originalPricePerKg', value)}
+              icon={TrendingUp}
+              min="0"
+            />
+            <InputField
+              label="Revised Price / kg"
+              value={data.rawMaterial.revisedPricePerKg}
+              onChange={(value) => updateRawMaterial('revisedPricePerKg', value)}
+              icon={TrendingUp}
+              min="0"
+            />
+            <InputField
+              label="Wastage (%)"
+              value={data.rawMaterial.wastage}
+              onChange={(value) => updateRawMaterial('wastage', value)}
+              icon={Percent}
+              min="0"
+            />
+          </SectionCard>
+
+          <SectionCard title="Processing Costs" icon={Cpu} subtotal={processingSubtotal}>
+            <div className="grid grid-cols-2 gap-x-4">
+              <InputField
+                label="Grinding"
+                value={data.processing.grinding}
+                onChange={(value) => updateProcessing('grinding', value)}
+                icon={Users}
+                min="0"
+              />
+              <InputField
+                label="Steaming"
+                value={data.processing.steaming}
+                onChange={(value) => updateProcessing('steaming', value)}
+                icon={Users}
+                min="0"
+              />
+              <InputField
+                label="Drying"
+                value={data.processing.drying}
+                onChange={(value) => updateProcessing('drying', value)}
+                icon={Users}
+                min="0"
+              />
+              <InputField
+                label="Labour"
+                value={data.processing.labour}
+                onChange={(value) => updateProcessing('labour', value)}
+                icon={Users}
+                min="0"
+              />
+              <InputField
+                label="Electricity"
+                value={data.processing.electricity}
+                onChange={(value) => updateProcessing('electricity', value)}
+                icon={Zap}
+                min="0"
+              />
+              <InputField
+                label="Other"
+                value={data.processing.other}
+                onChange={(value) => updateProcessing('other', value)}
+                icon={Users}
+                min="0"
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Common Costs" icon={Package}>
+            <InputField
+              label="Sticker Cost"
+              value={data.common.stickerPrice}
+              onChange={(value) => updateCommon('stickerPrice', value)}
+              min="0"
+            />
+          </SectionCard>
+
+          <SectionCard title="Profit Margin" icon={Percent}>
+            <div className="mt-4 text-left">
+              <span className="mb-2 block text-sm font-bold">
+                Margin: {toNumber(data.profitMargin).toLocaleString(undefined, PRECISION_OPTS)}%
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={data.profitMargin}
+                onChange={(event) => updateData('profitMargin', event.target.value)}
+                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-100 accent-blue-600"
+              />
+            </div>
+          </SectionCard>
         </div>
-        <button onClick={saveToHistory} className="w-full mt-6 bg-blue-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2"><Save size={20} /> Save Progress</button>
+
+        <div>
+          <SectionCard title="Packet Management" icon={Package}>
+            <PacketManager
+              packets={data.packetDefinitions}
+              onPacketChange={handlePacketChange}
+              onPacketAdd={handlePacketAdd}
+              onPacketRemove={handlePacketRemove}
+            />
+          </SectionCard>
+
+          <div className="rounded-[2rem] bg-slate-900 p-8 text-left text-white">
+            <h3 className="mb-6 text-4xl font-black">
+              {CURRENCY} {sellingPrice1kg.toLocaleString(undefined, PRECISION_OPTS)}
+            </h3>
+            <div className="space-y-4">
+              {calculatedPackets.map((packet) => (
+                <div key={packet.id} className="flex items-center justify-between rounded-2xl bg-white/5 p-4">
+                  <span className="font-bold">{packet.label}</span>
+                  <span className="text-xl font-black text-green-400">
+                    {CURRENCY} {packet.sellingPrice.toLocaleString(undefined, PRECISION_OPTS)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={saveToHistory}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white"
+              >
+                <Save size={20} /> Save Progress
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-2xl border border-white/30 py-4 font-black text-white"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {errors.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-left">
+              <p className="mb-2 text-sm font-bold text-red-700">Please fix the following issues:</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-red-700">
+                {errors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {storageError ? (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">
+              {storageError}
+            </div>
+          ) : null}
+        </div>
       </main>
     </div>
   );
