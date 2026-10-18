@@ -40,13 +40,17 @@ export const getPacketCost = (
   const weightKg = toNonNegative(packet.weightKg);
   const emptyPacketPrice = toNonNegative(packet.emptyPacketPrice);
 
+  const costPrice = totalCost1kg * weightKg + emptyPacketPrice;
+  const sellingPrice = sellingPrice1kg * weightKg + emptyPacketPrice;
+
   return {
     id: packet.id,
     label: packet.label || `${weightKg * 1000}g`,
     weightKg,
     emptyPacketPrice,
-    costPrice: totalCost1kg * weightKg + emptyPacketPrice,
-    sellingPrice: sellingPrice1kg * weightKg + emptyPacketPrice,
+    costPrice,
+    sellingPrice,
+    profit: sellingPrice - costPrice,
   };
 };
 

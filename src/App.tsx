@@ -3,6 +3,7 @@ import {
   Calculator,
   Coins,
   Cpu,
+  FileDown,
   History,
   Package,
   Percent,
@@ -176,7 +177,52 @@ const App = () => {
     }, PRINT_PREPARE_DELAY_MS);
   };
 
+  const handleExportCSV = () => {
+    const filename = `${data.productName.trim() || 'cost-calculation'}-${new Date().toISOString().split('T')[0]}.csv`;
+    const rows = [
+      ['Product Name', data.productName || 'Unnamed'],
+      ['Date', data.date],
+      ['Original Raw Price/kg', data.rawMaterial.originalPricePerKg],
+      ['Revised Raw Price/kg', data.rawMaterial.revisedPricePerKg],
+      ['Wastage (%)', `${data.rawMaterial.wastage}%`],
+      ['Effective Raw Material Cost', effectiveRawCost.toFixed(2)],
+      ['Processing - Grinding', data.processing.grinding],
+      ['Processing - Steaming', data.processing.steaming],
+      ['Processing - Drying', data.processing.drying],
+      ['Processing - Labour', data.processing.labour],
+      ['Processing - Electricity', data.processing.electricity],
+      ['Processing - Other', data.processing.other],
+      ['Processing Subtotal', processingSubtotal.toFixed(2)],
+      ['Sticker Price', data.common.stickerPrice],
+      ['Total Cost (1kg)', totalCost1kg.toFixed(2)],
+      ['Profit Margin (%)', `${data.profitMargin}%`],
+      ['Selling Price (1kg)', sellingPrice1kg.toFixed(2)],
+      [],
+      ['Packet Label', 'Weight (kg)', 'Empty Packet Cost', 'Cost Price', 'Selling Price', 'Profit'],
+      ...calculatedPackets.map((p) => [
+        p.label,
+        p.weightKg.toString(),
+        p.emptyPacketPrice.toFixed(2),
+        p.costPrice.toFixed(2),
+        p.sellingPrice.toFixed(2),
+        p.profit.toFixed(2),
+      ]),
+    ];
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.map((cell) => `"${cell}"`).join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const resetForm = () => {
+    if (!window.confirm('Reset all fields to defaults?')) {
+      return;
+    }
     const next = createDefaultCostData();
     updateData('id', next.id);
     updateData('date', next.date);
@@ -191,41 +237,96 @@ const App = () => {
 
   if (isPrinting) {
     return (
-      <div className="min-h-screen bg-white p-10 text-left text-gray-900">
-        <h1 className="mb-2 border-b-8 border-gray-900 pb-4 text-4xl font-black uppercase">
-          Cost Report: {data.productName || 'Unnamed'}
-        </h1>
-        <table className="mb-10 w-full border-collapse">
+      <div className="min-h-screen bg-white p-8 text-left text-gray-900">
+        <div className="mb-6 border-b-4 border-gray-900 pb-4">
+          <div className="flex justify-between items-end">
+            <div>
+              <h1 className="text-3xl font-black uppercase">Cost Report: {data.productName || 'Unnamed'}</h1>
+              <p className="text-sm text-gray-500 font-medium">Date: {data.date || new Date().toISOString().split('T')[0]}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-xs uppercase font-bold text-gray-400">Target Margin</span>
+              <p className="text-xl font-bold">{data.profitMargin}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 mb-6">
+          <div>
+            <h3 className="text-sm font-bold uppercase text-gray-500 mb-2 border-b pb-1">Raw Material</h3>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span>Revised Price / kg:</span>
+                <span>{CURRENCY} {toNumber(data.rawMaterial.revisedPricePerKg).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Wastage:</span>
+                <span>{data.rawMaterial.wastage}%</span>
+              </div>
+              <div className="flex justify-between font-bold border-t pt-1">
+                <span>Effective Raw Cost / kg:</span>
+                <span>{CURRENCY} {effectiveRawCost.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-bold uppercase text-gray-500 mb-2 border-b pb-1">Processing Breakdown</h3>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span>Grinding:</span><span>{CURRENCY} {toNumber(data.processing.grinding).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Steaming:</span><span>{CURRENCY} {toNumber(data.processing.steaming).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Drying:</span><span>{CURRENCY} {toNumber(data.processing.drying).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Labour:</span><span>{CURRENCY} {toNumber(data.processing.labour).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Electricity:</span><span>{CURRENCY} {toNumber(data.processing.electricity).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Other:</span><span>{CURRENCY} {toNumber(data.processing.other).toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold border-t pt-1">
+                <span>Processing Subtotal:</span>
+                <span>{CURRENCY} {processingSubtotal.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6 border rounded-xl p-4 bg-slate-50">
+          <div className="flex justify-between items-center text-sm mb-1">
+            <span>Sticker / Common Cost:</span>
+            <span className="font-semibold">{CURRENCY} {toNumber(data.common.stickerPrice).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center text-base font-bold mb-1 border-t pt-1">
+            <span>Total Production Cost (1kg):</span>
+            <span>{CURRENCY} {totalCost1kg.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center text-lg font-black text-blue-800">
+            <span>Base Selling Price (1kg @ {data.profitMargin}%):</span>
+            <span>{CURRENCY} {sellingPrice1kg.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <h2 className="mb-3 text-lg font-black uppercase border-b pb-1">Packet Pricing Breakdown</h2>
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-gray-900 text-left text-white">
-              <th className="p-3">Category</th>
-              <th className="p-3 text-right">{CURRENCY}</th>
+            <tr className="bg-gray-800 text-left text-white">
+              <th className="p-2">Packet Label</th>
+              <th className="p-2 text-right">Weight (kg)</th>
+              <th className="p-2 text-right">Empty Packet Cost</th>
+              <th className="p-2 text-right">Total Cost Price</th>
+              <th className="p-2 text-right">Selling Price</th>
+              <th className="p-2 text-right">Profit</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b">
-              <td className="p-3">Raw Material</td>
-              <td className="p-3 text-right">{effectiveRawCost.toFixed(2)}</td>
-            </tr>
-            <tr className="border-b">
-              <td className="p-3">Processing</td>
-              <td className="p-3 text-right">{processingSubtotal.toFixed(2)}</td>
-            </tr>
-            <tr className="bg-blue-50 font-black">
-              <td className="p-3">Total (1kg)</td>
-              <td className="p-3 text-right">{totalCost1kg.toFixed(2)}</td>
-            </tr>
+            {calculatedPackets.map((packet) => (
+              <tr key={packet.id} className="border-b">
+                <td className="p-2 font-bold">{packet.label}</td>
+                <td className="p-2 text-right">{packet.weightKg}</td>
+                <td className="p-2 text-right">{CURRENCY} {packet.emptyPacketPrice.toFixed(2)}</td>
+                <td className="p-2 text-right">{CURRENCY} {packet.costPrice.toFixed(2)}</td>
+                <td className="p-2 text-right font-bold text-green-700">{CURRENCY} {packet.sellingPrice.toFixed(2)}</td>
+                <td className="p-2 text-right font-bold text-blue-700">{CURRENCY} {packet.profit.toFixed(2)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        <h2 className="mb-4 text-lg font-black uppercase">Packet Pricing</h2>
-        {calculatedPackets.map((packet) => (
-          <div key={packet.id} className="flex justify-between border-b py-2 font-bold">
-            <span>{packet.label}</span>
-            <span>
-              {CURRENCY} {packet.sellingPrice.toFixed(2)}
-            </span>
-          </div>
-        ))}
       </div>
     );
   }
@@ -241,16 +342,27 @@ const App = () => {
             <button
               type="button"
               onClick={() => setShowHistory((prev) => !prev)}
-              className="rounded-2xl bg-slate-100 p-3"
+              className="rounded-2xl bg-slate-100 p-3 hover:bg-slate-200 transition-colors cursor-pointer"
               aria-label="Toggle history"
+              title="Toggle history"
             >
               <History size={20} />
             </button>
             <button
               type="button"
+              onClick={handleExportCSV}
+              className="rounded-2xl bg-emerald-600 p-3 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+              aria-label="Export CSV"
+              title="Export CSV"
+            >
+              <FileDown size={20} />
+            </button>
+            <button
+              type="button"
               onClick={handlePrint}
-              className="rounded-2xl bg-blue-600 p-3 text-white"
+              className="rounded-2xl bg-blue-600 p-3 text-white hover:bg-blue-700 transition-colors cursor-pointer"
               aria-label="Print report"
+              title="Print report"
             >
               <Printer size={20} />
             </button>
@@ -390,16 +502,42 @@ const App = () => {
           </SectionCard>
 
           <div className="rounded-[2rem] bg-slate-900 p-8 text-left text-white">
-            <h3 className="mb-6 text-4xl font-black">
-              {CURRENCY} {sellingPrice1kg.toLocaleString(undefined, PRECISION_OPTS)}
-            </h3>
-            <div className="space-y-4">
+            <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2 border-b border-white/10 pb-4">
+              <div>
+                <p className="text-xs uppercase font-bold text-slate-400">1kg Selling Price</p>
+                <h3 className="text-4xl font-black text-green-400">
+                  {CURRENCY} {sellingPrice1kg.toLocaleString(undefined, PRECISION_OPTS)}
+                </h3>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase font-bold text-slate-400">1kg Base Cost</p>
+                <p className="text-xl font-bold text-slate-300">
+                  {CURRENCY} {totalCost1kg.toLocaleString(undefined, PRECISION_OPTS)}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Packet Pricing</p>
               {calculatedPackets.map((packet) => (
-                <div key={packet.id} className="flex items-center justify-between rounded-2xl bg-white/5 p-4">
-                  <span className="font-bold">{packet.label}</span>
-                  <span className="text-xl font-black text-green-400">
-                    {CURRENCY} {packet.sellingPrice.toLocaleString(undefined, PRECISION_OPTS)}
-                  </span>
+                <div key={packet.id} className="rounded-2xl bg-white/5 p-4 transition-all hover:bg-white/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-base font-bold text-white">{packet.label}</span>
+                      <span className="ml-2 text-xs text-slate-400">({packet.weightKg} kg)</span>
+                    </div>
+                    <span className="text-xl font-black text-green-400">
+                      {CURRENCY} {packet.sellingPrice.toLocaleString(undefined, PRECISION_OPTS)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex justify-between border-t border-white/5 pt-2 text-xs">
+                    <span className="text-slate-400">
+                      Cost: <span className="font-medium text-slate-200">{CURRENCY} {packet.costPrice.toLocaleString(undefined, PRECISION_OPTS)}</span>
+                    </span>
+                    <span className="text-slate-400">
+                      Profit: <span className="font-bold text-blue-400">+{CURRENCY} {packet.profit.toLocaleString(undefined, PRECISION_OPTS)}</span>
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -407,14 +545,14 @@ const App = () => {
               <button
                 type="button"
                 onClick={saveToHistory}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white hover:bg-blue-700 transition-colors cursor-pointer"
               >
                 <Save size={20} /> Save Progress
               </button>
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded-2xl border border-white/30 py-4 font-black text-white"
+                className="rounded-2xl border border-white/30 py-4 font-black text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 Reset
               </button>
