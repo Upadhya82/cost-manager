@@ -34,5 +34,6 @@ describe('calculations', () => {
     expect(packets).toHaveLength(1);
     expect(packets[0].costPrice).toBeCloseTo(105, 2);
     expect(packets[0].sellingPrice).toBeCloseTo(115, 2);
+    expect(packets[0].profit).toBeCloseTo(10, 2);
   });
 });

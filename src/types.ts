@@ -42,4 +42,6 @@ export interface CalculatedPacket {
   emptyPacketPrice: number;
   costPrice: number;
   sellingPrice: number;
+  profit: number;
 }
+
